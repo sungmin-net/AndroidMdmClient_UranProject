@@ -3,16 +3,15 @@ package net.sungmin.uran;
 
 import android.app.admin.DeviceAdminReceiver;
 import android.app.admin.DevicePolicyManager;
+import android.bluetooth.BluetoothClass;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.util.Log;
 
-import androidx.core.view.KeyEventDispatcher;
-
 public class UranAdminReceiver extends DeviceAdminReceiver {
 
-    String LOG_TAG = "URAN_ADMIN_RECEIVER";
+    String LOG_TAG = "URAN_RECEIVER";
 
     @Override
     public void onProfileProvisioningComplete(Context context, Intent intent) {
@@ -25,5 +24,19 @@ public class UranAdminReceiver extends DeviceAdminReceiver {
 
     public static ComponentName getComponentName(Context context) {
         return new ComponentName(context.getApplicationContext(), UranAdminReceiver.class);
+    }
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+
+        Log.i(LOG_TAG, "onReceive: " + intent.getAction());
+        DevicePolicyManager dpm =
+                (DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE);
+        switch (intent.getAction()) {
+            case Intent.ACTION_BOOT_COMPLETED:
+                if (dpm.isDeviceOwnerApp(context.getPackageName())) {
+                    // TODO policy polling
+                }
+        }
     }
 }

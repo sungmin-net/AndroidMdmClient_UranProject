@@ -3,6 +3,9 @@
     package="net.sungmin.uran">
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
 
     <application
         android:allowBackup="true"
@@ -26,8 +29,10 @@
                 android:name="android.app.device_admin"
                 android:resource="@xml/uran_admin_receiver"/>
             <intent-filter>
-                <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
             </intent-filter>
         </receiver>
+
+        <service android:name=".UranAdminService" />
     </application>
 </manifest>

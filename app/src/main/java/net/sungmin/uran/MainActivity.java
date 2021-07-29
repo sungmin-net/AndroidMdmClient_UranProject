@@ -2,18 +2,25 @@ package net.sungmin.uran;
 
 import android.app.Activity;
 import android.app.admin.DevicePolicyManager;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.icu.util.Output;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.Bundle;
+import android.os.Handler;
+import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
@@ -32,6 +39,8 @@ import java.security.NoSuchAlgorithmException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
 
 import javax.net.ssl.SSLContext;
@@ -41,21 +50,41 @@ import javax.net.ssl.TrustManagerFactory;
 
 public class MainActivity extends Activity {
 
-    String LOG_TAG = "URAN_MAIN";
+    static String LOG_TAG = "URAN_MAIN";
+    public static final String ACTIVITY_LOG = "ACTIVITY_LOG";
 
     DevicePolicyManager mDpm;
     ConnectivityManager mCm;
     SSLContext mSslContext;
 
     TextView mTxtIsDeviceOwner;
+    TextView mTxtActivityLogger;
     Button mBtnRemoveAdmin;
     Button mBtnAllowCamera;
     Button mBtnDisallowCamera;
     Button mBtnSendHello;
+    Button mBtnStartPolling;
+    Button mBtnStopPolling;
+
     EditText mEtServerIp;
     EditText mEtServerPort;
     String mPackageName;
     ComponentName mComponentName;
+
+    BroadcastReceiver mReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            Log.d(LOG_TAG, "onReceive() " + action);
+            switch(action) {
+                case ACTIVITY_LOG:
+                    activityLog(intent.getStringExtra(ACTIVITY_LOG));
+                    break;
+                default:
+                    throw new IllegalStateException("Unexpected value: " + intent.getAction());
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,31 +96,6 @@ public class MainActivity extends Activity {
         mPackageName = getApplicationContext().getPackageName();
         mComponentName = UranAdminReceiver.getComponentName(getApplicationContext());
 
-        // prepare ssl context
-        try {
-            // load cert
-            CertificateFactory cf = CertificateFactory.getInstance("X.509");
-            InputStream caInput = getResources().openRawResource(R.raw.uran_mdm_server);
-            Certificate cert = cf.generateCertificate(caInput);
-
-            // create keystore
-            KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
-            keyStore.load(null, null);
-            keyStore.setCertificateEntry("ca", cert);
-
-            // create TrustManager
-            TrustManagerFactory tmf = TrustManagerFactory.getInstance(
-                    TrustManagerFactory.getDefaultAlgorithm());
-            tmf.init(keyStore);
-
-            // create SSLContext
-            mSslContext = SSLContext.getInstance("TLS");
-            mSslContext.init(null, tmf.getTrustManagers(), null);
-
-        } catch (CertificateException | KeyStoreException | IOException | NoSuchAlgorithmException | KeyManagementException e) {
-            e.printStackTrace();
-        }
-
         // prepare button and listeners
         mTxtIsDeviceOwner = findViewById(R.id.txt_is_device_owner);
         mBtnRemoveAdmin = findViewById(R.id.btn_remove_admin);
@@ -100,7 +104,7 @@ public class MainActivity extends Activity {
             public void onClick(View view) {
                 Log.d(LOG_TAG, "btnRemoveAdminClicked");
                 mDpm.clearDeviceOwnerApp(mPackageName);
-                showToast("URAN admin removed.");
+                activityLog("URAN admin removed.");
                 mBtnAllowCamera.setEnabled(false);
                 mBtnDisallowCamera.setEnabled(false);
             }
@@ -111,7 +115,7 @@ public class MainActivity extends Activity {
             public void onClick(View view) {
                 Log.d(LOG_TAG, "btnAllowCameraClicked");
                 mDpm.setCameraDisabled(mComponentName, false);
-                showToast("Camera allowed.");
+                activityLog("Camera allowed.");
             }
         });
         mBtnDisallowCamera = findViewById(R.id.btn_disallow_camera);
@@ -120,7 +124,7 @@ public class MainActivity extends Activity {
             public void onClick(View view) {
                 Log.d(LOG_TAG, "btnDisallowCameraClicked");
                 mDpm.setCameraDisabled(mComponentName, true);
-                showToast("Camera disallowed.");
+                activityLog("Camera disallowed.");
             }
         });
         mBtnSendHello = findViewById(R.id.btn_send_hello);
@@ -130,25 +134,21 @@ public class MainActivity extends Activity {
 
             @Override
             public void onClick(View view) {
-                try {
-                    SSLSocketFactory factory = mSslContext.getSocketFactory();
-                    SSLSocket sslSocket = (SSLSocket) factory.createSocket(
-                            mEtServerIp.getText().toString(),
-                            Integer.parseInt(mEtServerPort.getText().toString()));
-
-                    BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(
-                            sslSocket.getOutputStream()));
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(
-                            sslSocket.getInputStream()));
-
-                    // TODO
-                } catch (UnknownHostException e) {
-                    e.printStackTrace();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+                Log.i(LOG_TAG, "Send Hello clicked.");
+                Intent intent = new Intent(getApplicationContext(), UranAdminService.class);
+                intent.setAction(UranAdminService.ACTION_SEND_HELLO);
+                intent.putExtra("SERVER_IP", getServerIp());
+                intent.putExtra("SERVER_PORT", getServerPort());
+                startService(intent);
             }
         });
+
+        mTxtActivityLogger = findViewById(R.id.activity_logger);
+        mTxtActivityLogger.setMovementMethod(new ScrollingMovementMethod());
+        mTxtActivityLogger.setText(getTime() + "Activity logger started.");
+
+        mBtnStartPolling = findViewById(R.id.btn_start_polling);
+        mBtnStopPolling = findViewById(R.id.btn_stop_polling);
     }
 
     @Override
@@ -180,9 +180,37 @@ public class MainActivity extends Activity {
         } else {
             mBtnSendHello.setEnabled(false);
         }
+
+        if (isConnected && isDeviceOwner) {
+            mBtnStartPolling.setEnabled(true);
+            mBtnStopPolling.setEnabled(true);
+        } else {
+            mBtnStartPolling.setEnabled(false);
+            mBtnStopPolling.setEnabled(false);
+        }
+        registerReceiver(mReceiver, new IntentFilter(ACTIVITY_LOG));
     }
 
-    private void showToast(String msg) {
-        Toast.makeText(getApplicationContext(), msg, Toast.LENGTH_LONG).show();
+    @Override
+    protected void onPause() {
+        super.onPause();
+        unregisterReceiver(mReceiver);
+    }
+
+    protected String getServerIp() {
+        return mEtServerIp.getText().toString();
+    }
+
+    protected String getServerPort() {
+        return mEtServerPort.getText().toString();
+    }
+
+    protected void activityLog(String msg) {
+        mTxtActivityLogger.append("\n" + getTime() + msg);
+    }
+
+    private String getTime() {
+        SimpleDateFormat format = new SimpleDateFormat("[yy.MM.dd HH:mm:ss] ");
+        return format.format(new Date());
     }
 }
